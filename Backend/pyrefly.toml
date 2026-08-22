@@ -1,0 +1,4 @@
+# Pyrefly (Meta) configuration — type check with: pyrefly check
+search_path = ["."]
+project_includes = ["main", "Backend"]
+preset = "strict"
