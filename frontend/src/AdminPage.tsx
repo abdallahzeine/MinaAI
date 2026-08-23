@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Search, Sliders } from 'lucide-react'
 import './AdminPage.css'
 
 export interface AdminOverview {
@@ -142,6 +142,13 @@ function AdminPage() {
         </a>
         <h1>Mina AI — Admin Analytics</h1>
         <div className="admin-header-actions">
+          <a
+            className="admin-nav-link dev-link"
+            href="/dev"
+            title="Configure online models, API keys, endpoints and reasoning parameters"
+          >
+            <Sliders size={15} /> Developer Settings
+          </a>
           {data?.generated_at && (
             <span className="admin-updated">Updated {fmtDateTime(data.generated_at)}</span>
           )}

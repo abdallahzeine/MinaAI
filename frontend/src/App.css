@@ -124,6 +124,7 @@ button:disabled {
 }
 
 .mic-btn,
+.stop-btn,
 .reset-btn {
   display: inline-flex;
   align-items: center;
@@ -139,10 +140,24 @@ button:disabled {
 }
 
 .mic-btn:hover:not(:disabled),
+.stop-btn:hover:not(:disabled),
 .reset-btn:hover:not(:disabled) {
   border-color: var(--accent-border);
   color: var(--accent);
   transform: scale(1.04);
+}
+
+.stop-btn.is-active {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.25);
+  animation: stopPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stopPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.25); }
+  50% { box-shadow: 0 0 24px rgba(239, 68, 68, 0.5); }
 }
 
 .mic-btn.is-recording {

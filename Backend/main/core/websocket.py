@@ -74,6 +74,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if t == "ping":
             await self.send(text_data=json.dumps({"type": "pong"}))
             return
+        if t in ("stop", "cancel"):
+            try:
+                from .tts import get_tts_service
+                get_tts_service().interrupt()
+            except Exception:
+                pass
+            if self._stream_task and not self._stream_task.done():
+                logger.info("Force-terminating generation process for session %s on user stop request", self.session_id)
+                self._stream_task.cancel()
+                try:
+                    await self._stream_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                self._stream_task = None
+            await self._safe_send(_avatar_state_frame("idle"))
+            await self._safe_send(json.dumps({"type": "stopped"}))
+            return
         if t in ("audio", "input"):
             if self._stream_task and not self._stream_task.done():
                 # Surface the drop: otherwise the client's optimistic loading spinner never ends
@@ -208,7 +225,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self._safe_send(_avatar_state_frame("idle"))
                 await self.send(text_data=json.dumps({"type": "speaking_done", "text": accumulated}))
         except asyncio.CancelledError:
-            raise
+            logger.info("Stream cancelled/discarded for session %s", self.session_id)
+            return
         except Exception as exc:
             logger.exception("WebSocket _handle_stream failed for session %s", self.session_id)
             # Generic error surfacing without leaking internals to LLM

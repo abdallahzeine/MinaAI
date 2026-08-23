@@ -75,6 +75,10 @@ nul
 
 # ── Internal / not for sharing ────────────────────────────────────
 code-review/
+TTS_TEST_MODELS/
+
+# ── Large binaries / installers ───────────────────────────────────
+Backend/assets/*.exe
 
 # ── Misc ──────────────────────────────────────────────────────────
 .cache/

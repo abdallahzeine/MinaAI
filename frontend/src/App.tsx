@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Loader2, Mic, MicOff, MicVocal, RotateCcw, Volume2, VolumeX } from 'lucide-react'
+import { Loader2, Mic, MicOff, MicVocal, RotateCcw, Square, Volume2, VolumeX } from 'lucide-react'
 import FaceDemo from './FaceDemo'
 import './App.css'
 import { WsClient, type AvatarState, type WsEvent } from './api'
@@ -286,6 +286,13 @@ function App() {
           setAvatar(IDLE)
           break
         }
+        case 'stopped': {
+          setAvatar(IDLE)
+          setIsAudioLoading(false)
+          setIsTtsPending(false)
+          setTtsProgress(null)
+          break
+        }
         case 'pong': {
           break
         }
@@ -306,6 +313,45 @@ function App() {
       ws.disconnect()
     }
   }, [cleanupAudio, playB64Audio, invalidateAudioForNewRequest])
+
+  const handleStop = useCallback(() => {
+    const mr = mediaRecorderRef.current
+    if (mr && mr.state !== 'inactive') {
+      mr.ondataavailable = null
+      mr.onstop = null
+      try {
+        mr.stop()
+      } catch {}
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+    mediaRecorderRef.current = null
+    chunksRef.current = []
+    setIsRecording(false)
+
+    // Notify backend to cancel and discard any in-flight LLM/TTS generation
+    wsRef.current?.sendStop()
+
+    // Stop and clear audio playback immediately
+    try {
+      const a = audioRef.current
+      if (a) a.pause()
+    } catch {}
+    cleanupAudio()
+
+    // Discard active generation and transcript
+    lastAudioB64Ref.current = null
+    generationRef.current += 1
+    accRef.current = ''
+    setTranscript('')
+    setHasAudio(false)
+    setIsAudioLoading(false)
+    setIsTtsPending(false)
+    setTtsProgress(null)
+    setReplayError(false)
+    setAvatar(IDLE)
+    setError(null)
+  }, [cleanupAudio])
 
   const handleReset = () => {
     const mr = mediaRecorderRef.current
@@ -398,6 +444,14 @@ function App() {
     }
   }
 
+  const isGeneratingOrPlaying =
+    isRecording ||
+    avatar.phase === 'thinking' ||
+    avatar.phase === 'speaking' ||
+    avatar.phase === 'listening' ||
+    isAudioLoading ||
+    isTtsPending
+
   const genPct =
     ttsProgress && ttsProgress.total > 0 && ttsProgress.done > 0
       ? Math.min(100, Math.max(0, Math.round((ttsProgress.done / ttsProgress.total) * 100)))
@@ -446,6 +500,16 @@ function App() {
           title={isRecording ? 'Stop — will send to Gemma' : 'Start mic'}
         >
           {avatar.phase === 'speaking' ? <MicVocal size={22} strokeWidth={2} /> : isRecording ? <MicOff size={22} strokeWidth={2} /> : <Mic size={22} strokeWidth={2} />}
+        </button>
+        <button
+          type="button"
+          className={`stop-btn ${isGeneratingOrPlaying ? 'is-active' : ''}`}
+          onClick={handleStop}
+          disabled={!isGeneratingOrPlaying}
+          aria-label="Force stop and discard generation"
+          title={isGeneratingOrPlaying ? 'Force stop generation and discard' : 'Stop generation'}
+        >
+          <Square size={19} fill={isGeneratingOrPlaying ? 'currentColor' : 'none'} strokeWidth={2} />
         </button>
         <button type="button" className="reset-btn" onClick={handleReset} aria-label="Reset" title="Reset">
           <RotateCcw size={20} strokeWidth={2} />

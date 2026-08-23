@@ -13,6 +13,7 @@ export type WsEvent =
   | { type: 'tts_progress'; done: number; total: number }
   | { type: 'audio'; audio: string; text?: string; transcript?: string; sample_rate?: number; format?: string }
   | { type: 'error'; message: string; detail?: string }
+  | { type: 'stopped' }
   | { type: 'pong' }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -105,6 +106,10 @@ export class WsClient {
   async sendAudio(blob: Blob, sampleRate?: number) {
     const b64 = await blobToBase64(blob)
     this.sendJson({ type: 'audio', audio: b64, sample_rate: sampleRate ?? 48000, session_id: this.sessionId })
+  }
+
+  sendStop() {
+    return this.sendJson({ type: 'stop', session_id: this.sessionId })
   }
 
   disconnect() {

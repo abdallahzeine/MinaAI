@@ -157,17 +157,25 @@ class DjangoChatMessageHistory(BaseChatMessageHistory):
 
 def get_llm() -> BaseChatModel:
     p = resolve_params()
-    return get_llama_llm(p["llama_cpp_base_url"], p["llama_cpp_model"], p["temperature"])
+    return get_llama_llm(
+        base_url=p.get("base_url") or p.get("llama_cpp_base_url") or "",
+        model=p.get("model") or p.get("llama_cpp_model") or "",
+        temperature=p["temperature"],
+        api_key=p.get("api_key"),
+        extra_params=p.get("extra_params"),
+    )
 
 
 def _get_llm_with_thinking(params: Params) -> BaseChatModel:
     """LLM bound with the runtime thinking level (reasoning + token budget)."""
     return get_llama_llm(
-        params["llama_cpp_base_url"],
-        params["llama_cpp_model"],
-        params["temperature"],
+        base_url=params.get("base_url") or params.get("llama_cpp_base_url") or "",
+        model=params.get("model") or params.get("llama_cpp_model") or "",
+        temperature=params["temperature"],
         thinking_level=params["thinking_level"],
         thinking_budget=params["thinking_budget"],
+        api_key=params.get("api_key"),
+        extra_params=params.get("extra_params"),
     )
 
 

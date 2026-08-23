@@ -40,6 +40,18 @@
   color: var(--accent);
 }
 
+.admin-nav-link.dev-link {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.admin-nav-link.dev-link:hover {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
 .admin-header-actions {
   display: inline-flex;
   align-items: center;

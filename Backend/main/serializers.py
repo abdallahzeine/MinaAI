@@ -3,11 +3,64 @@ from typing import override
 
 from rest_framework import serializers
 
-from .core.config import THINKING_LEVELS
-
-
 class RuntimeSettingsSerializer(serializers.Serializer):
-    thinking_level = serializers.ChoiceField(choices=THINKING_LEVELS)
+    thinking_level = serializers.CharField(max_length=64, required=False, allow_blank=True)
+
+
+class DevSettingsSerializer(serializers.Serializer):
+    provider = serializers.ChoiceField(choices=["openai_compatible", "llama_cpp"], required=False, default="openai_compatible")
+    base_url = serializers.CharField(max_length=512, required=False, allow_blank=True)
+    model = serializers.CharField(max_length=256, required=False, allow_blank=True)
+    api_key = serializers.CharField(max_length=512, required=False, allow_blank=True)
+    temperature = serializers.FloatField(min_value=0.0, max_value=2.0, required=False)
+    chat_history_window = serializers.IntegerField(min_value=0, max_value=100, required=False)
+    thinking_level = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    extra_params = serializers.CharField(required=False, allow_blank=True)
+    system_prompt = serializers.CharField(required=False, allow_blank=True)
+    tts_provider = serializers.CharField(max_length=64, required=False, allow_blank=True, default="audar")
+    tts_base_url = serializers.CharField(max_length=512, required=False, allow_blank=True, default="https://openrouter.ai/api/v1")
+    tts_model = serializers.CharField(max_length=256, required=False, allow_blank=True, default="audarai/Audar-TTS-V1-Flash")
+    tts_voice = serializers.CharField(max_length=128, required=False, allow_blank=True, default="demo_female_1")
+    tts_api_key = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+    tts_speed = serializers.FloatField(min_value=0.25, max_value=3.0, required=False, default=1.0)
+    tts_extra_params = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class TestConnectionSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=512)
+    model = serializers.CharField(max_length=256)
+    api_key = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+    extra_params = serializers.CharField(required=False, allow_blank=True, default="")
+    prompt = serializers.CharField(max_length=256, required=False, allow_blank=True, default="Hello! Respond with: OK")
+
+
+class ModelInfoSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=512)
+    model = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    api_key = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+
+
+class FetchTTSVoicesSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=512)
+    model = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    api_key = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+
+
+class TTSModelInfoSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=512)
+    model = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    api_key = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+
+
+class TestTTSSerializer(serializers.Serializer):
+    provider = serializers.CharField(max_length=64, required=False, default="audar")
+    model = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    voice = serializers.CharField(max_length=128, required=False, default="demo_female_1")
+    speed = serializers.FloatField(min_value=0.25, max_value=3.0, required=False, default=1.0)
+    text = serializers.CharField(max_length=500, required=False, default="مرحبا بكم، هذا اختبار لتوليد الصوت بالذكاء الاصطناعي.")
+    extra_params = serializers.CharField(required=False, allow_blank=True, default="")
+    base_url = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+    api_key = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
 
 SESSION_ID_RE: re.Pattern[str] = re.compile(r"^[\w:-]+$")
 

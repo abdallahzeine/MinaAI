@@ -12,6 +12,18 @@ except Exception:
 
 def main() -> None:
     """Run administrative tasks."""
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip())
+        except Exception:
+            pass
+
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Backend.settings')
     try:
         from django.core.management import execute_from_command_line

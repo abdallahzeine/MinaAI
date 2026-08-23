@@ -16,7 +16,7 @@ class Conversation(models.Model):
 
 class Setting(models.Model):
     key = models.CharField(max_length=128, unique=True, db_index=True)
-    value = models.CharField(max_length=1024, default="")
+    value = models.TextField(default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
