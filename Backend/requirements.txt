@@ -7,13 +7,10 @@ langchain-openai
 channels
 channels-redis
 daphne
-transformers>=4.45.0
+llama-cpp-python>=0.3.0
 torch
 neucodec
 soundfile
 librosa
 numpy
 huggingface_hub
-accelerate
-torchao==0.9.0
-datasets>=3.0.0

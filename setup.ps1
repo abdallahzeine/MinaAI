@@ -97,10 +97,11 @@ if (-not (Test-Path Backend\.env)) {
 DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 CORS_ALLOWED_ORIGINS=http://localhost:5173,https://localhost:5173
-TTS_DEVICE=cuda:0
+TTS_DEVICE=cpu
+TTS_GPU_LAYERS=0
 LLAMA_CPP_BASE_URL=http://localhost:8080/v1
 '@ | Set-Content -Path Backend\.env -Encoding utf8
-    Ok "Created Backend\.env (TTS_DEVICE=cuda:0)"
+    Ok "Created Backend\.env (TTS_DEVICE=cpu)"
 }
 
 Info "6/6 Django migrations (creates Backend\db.sqlite3)"

@@ -18,7 +18,8 @@ if (Test-Path "Backend\.env") {
         }
     }
 }
-if (-not $env:TTS_DEVICE) { $env:TTS_DEVICE = "cuda:0" }
+if (-not $env:TTS_DEVICE) { $env:TTS_DEVICE = "cpu" }
+if (-not $env:TTS_GPU_LAYERS) { $env:TTS_GPU_LAYERS = "0" }
 
 $llamaBin = $null
 $serveArgs = @()

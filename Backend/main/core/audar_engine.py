@@ -1,7 +1,7 @@
-"""Audar-TTS-V1-Flash Inference Engine for Backend.
+"""Audar-TTS-V1-Flash Inference Engine for Backend (llama_cpp / GGUF).
 
 Handles model loading, voice reference encoding, prompt construction,
-neural speech token generation, and NeuCodec audio synthesis.
+neural speech token generation via llama_cpp, and NeuCodec audio synthesis.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 REF_SR = 16_000   # Reference clip sample rate (for codec encoding)
 OUT_SR = 24_000   # Generated output audio sample rate (24 kHz)
 MODEL_REPO = "audarai/Audar-TTS-V1-Flash"
+DEFAULT_GGUF_FILENAME = "Audar-TTS-V1-Flash-Q4_K_M.gguf"
 CODEC_REPO = "neuphonic/neucodec"
 
 # Supported expression tags for Flash
@@ -40,7 +41,6 @@ EXPRESSION_TAGS = [
 ]
 
 GEN_DEFAULTS = dict(
-    do_sample=True,
     temperature=1.0,
     top_k=40,
     top_p=0.9,
@@ -51,18 +51,8 @@ GEN_DEFAULTS = dict(
 _SPEECH_RE = re.compile(r"<\|speech_(\d+)\|>")
 
 
-class ForceStopCriteria:
-    """Hugging Face compatible stopping criteria to force-abort generation immediately."""
-
-    def __init__(self, stop_event):
-        self.stop_event = stop_event
-
-    def __call__(self, input_ids, scores, **kwargs) -> bool:
-        return self.stop_event.is_set()
-
-
 class AudarTTSEngine:
-    """Audar-TTS engine wrapper managing model weights, codec, and generation."""
+    """Audar-TTS engine wrapper managing GGUF model weights via llama_cpp, codec, and generation."""
 
     def __init__(self, device: Optional[str] = None, log_callback: Optional[Callable[[str], None]] = None):
         self.log = log_callback or (lambda msg: logger.info("[AudarEngine] %s", msg))
@@ -70,27 +60,12 @@ class AudarTTSEngine:
         self._stop_event = threading.Event()
 
         if device is None:
-            env_dev = os.environ.get("TTS_DEVICE", "").strip()
-            if env_dev:
-                self.device = env_dev
-            elif torch.cuda.is_available():
-                self.device = "cuda:0"
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                self.device = "mps"
-            else:
-                self.device = "cpu"
+            env_dev = os.environ.get("TTS_DEVICE", "cpu").strip()
+            self.device = env_dev if env_dev else "cpu"
         else:
             self.device = device
 
-        if "cuda" in self.device and torch.cuda.is_bf16_supported():
-            self.dtype = torch.bfloat16
-        elif "cuda" in self.device:
-            self.dtype = torch.float16
-        else:
-            self.dtype = torch.float32
-
-        self.model = None
-        self.tokenizer = None
+        self.llm = None
         self.codec = None
         self.cached_ref_codes: dict[str, list[int]] = {}
         self.active_voice = "demo_male_1"
@@ -107,32 +82,56 @@ class AudarTTSEngine:
         self._stop_event.clear()
 
     def is_loaded(self) -> bool:
-        return self._is_loaded and self.model is not None and self.codec is not None
+        return self._is_loaded and self.llm is not None and self.codec is not None
 
     def load_models(self) -> None:
-        """Loads both Transformers model/tokenizer and NeuCodec."""
+        """Loads both llama_cpp GGUF model and NeuCodec."""
         if self.is_loaded():
             return
 
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from huggingface_hub import hf_hub_download
+        from llama_cpp import Llama
         from neucodec import NeuCodec
         import warnings
 
         warnings.filterwarnings("ignore", category=FutureWarning)
         warnings.filterwarnings("ignore", category=UserWarning)
 
-        self.log(f"Device target: {self.device} (Precision: {self.dtype})")
+        self.log(f"Device target: {self.device}")
 
-        # 1. Load Tokenizer & LM Backbone
-        self.log(f"Loading Audar-TTS backbone from {MODEL_REPO} (subfolder='transformers')...")
+        # 1. Load GGUF model via llama_cpp
+        gguf_file = os.environ.get("TTS_GGUF_FILE", DEFAULT_GGUF_FILENAME).strip()
+        gguf_path = os.environ.get("TTS_GGUF_PATH", "").strip()
+
+        if gguf_path and os.path.exists(gguf_path):
+            model_path = gguf_path
+            self.log(f"Using local GGUF backbone from {model_path}...")
+        else:
+            self.log(f"Resolving Audar-TTS GGUF ({gguf_file}) from {MODEL_REPO}...")
+            t0 = time.time()
+            model_path = hf_hub_download(repo_id=MODEL_REPO, filename=gguf_file)
+            self.log(f"GGUF ready at {model_path} in {time.time() - t0:.2f}s.")
+
+        n_gpu_layers_env = os.environ.get("TTS_GPU_LAYERS")
+        if n_gpu_layers_env is not None and n_gpu_layers_env.strip():
+            n_gpu_layers = int(n_gpu_layers_env.strip())
+        else:
+            n_gpu_layers = -1 if "cuda" in self.device else 0
+
+        cpu_cnt = os.cpu_count() or 4
+        default_threads = min(8, max(2, cpu_cnt - 2))
+        n_threads = int(os.environ.get("TTS_N_THREADS", str(default_threads)))
+        n_ctx = int(os.environ.get("TTS_N_CTX", "4096"))
+        self.log(f"Initializing Llama model (n_gpu_layers={n_gpu_layers}, n_threads={n_threads}, n_ctx={n_ctx})...")
         t0 = time.time()
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO, subfolder="transformers")
-        self.model = AutoModelForCausalLM.from_pretrained(
-            MODEL_REPO,
-            subfolder="transformers",
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=True,
-        ).eval().to(self.device)
+        self.llm = Llama(
+            model_path=model_path,
+            n_ctx=n_ctx,
+            n_gpu_layers=n_gpu_layers,
+            n_threads=n_threads,
+            n_threads_batch=n_threads,
+            verbose=False,
+        )
         self.log(f"Backbone loaded in {time.time() - t0:.2f}s.")
 
         # 2. Load NeuCodec (with open mirror fallback)
@@ -141,7 +140,6 @@ class AudarTTSEngine:
         codec = None
         for repo_candidate in [CODEC_REPO, "nguyensu27/neucodec", "eugenehp/neucodec"]:
             try:
-                from huggingface_hub import hf_hub_download
                 ckpt_path = hf_hub_download(repo_id=repo_candidate, filename="pytorch_model.bin")
                 codec = NeuCodec(24_000, 480)
                 state_dict = torch.load(ckpt_path, map_location="cpu")
@@ -166,7 +164,7 @@ class AudarTTSEngine:
         self._is_loaded = True
 
     def warmup(self) -> None:
-        """Prime PyTorch execution graphs and NeuCodec decoder so first inference has 0 cold-start delay."""
+        """Prime execution graphs and NeuCodec decoder so first inference has 0 cold-start delay."""
         if not self.is_loaded():
             self.load_models()
         self.log("Pre-warming TTS generation pipeline...")
@@ -245,8 +243,7 @@ class AudarTTSEngine:
         if not self.is_loaded():
             self.load_models()
 
-        assert self.model is not None
-        assert self.tokenizer is not None
+        assert self.llm is not None
         assert self.codec is not None
 
         # 1. Reference Audio Codes
@@ -262,36 +259,36 @@ class AudarTTSEngine:
 
         # 2. Prompt Building & Tokenization
         prompt = self.build_prompt(target_text, self.active_ref_text, ref_codes)
-        input_ids = self.tokenizer.encode(prompt, add_special_tokens=False, return_tensors="pt").to(self.device)
-        tce = self.tokenizer.convert_tokens_to_ids("<|TARGET_CODES_END|>")
+        tce_tokens = self.llm.tokenize(b"<|TARGET_CODES_END|>", add_bos=False, special=True)
+        tce = tce_tokens[0] if tce_tokens else None
+        toks = self.llm.tokenize(prompt.encode("utf-8"), add_bos=False, special=True)
 
         if self._stop_event.is_set():
             raise RuntimeError("Generation force-stopped by user")
 
-        from transformers import StoppingCriteriaList
-
-        stop_criteria = StoppingCriteriaList([ForceStopCriteria(self._stop_event)])
-        gen_config = {
-            **GEN_DEFAULTS,
-            "temperature": temperature,
-            "max_new_tokens": max_new_tokens,
-            "eos_token_id": tce,
-            "pad_token_id": 151643,
-            "stopping_criteria": stop_criteria,
-        }
-
-        # 3. Speech Token Generation (LM Backbone)
-        with torch.no_grad():
-            output_ids = self.model.generate(
-                input_ids,
-                **gen_config
-            )
+        # 3. Speech Token Generation (llama_cpp Backbone)
+        ids: list[int] = []
+        for tid in self.llm.generate(
+            toks,
+            temp=temperature,
+            top_k=GEN_DEFAULTS.get("top_k", 40),
+            top_p=GEN_DEFAULTS.get("top_p", 0.9),
+            repeat_penalty=GEN_DEFAULTS.get("repetition_penalty", 1.1),
+        ):
+            if self._stop_event.is_set():
+                raise RuntimeError("Generation force-stopped by user")
+            if tid == tce or len(ids) >= max_new_tokens:
+                break
+            ids.append(tid)
 
         if self._stop_event.is_set():
             raise RuntimeError("Generation force-stopped by user")
 
         # 4. Extract speech tokens
-        gen_tokens_text = self.tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=False)
+        gen_tokens_text = "".join(
+            self.llm.detokenize([t], special=True).decode("utf-8", "ignore")
+            for t in ids
+        )
         codes = [int(x) for x in _SPEECH_RE.findall(gen_tokens_text)]
 
         if not codes:

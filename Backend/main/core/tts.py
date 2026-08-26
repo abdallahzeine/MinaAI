@@ -25,7 +25,6 @@ from typing import Callable, Optional, Tuple, Type
 import numpy as np
 
 from .audar_engine import OUT_SR, AudarTTSEngine, numpy_to_wav_bytes
-from .text_batcher import split_into_batches
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class BaseTTSProvider:
 
 
 class AudarTTSProvider(BaseTTSProvider):
-    """Audar-TTS-V1-Flash provider with sentence batching & English surrounding."""
+    """Audar-TTS-V1-Flash provider with direct audio synthesis."""
 
     def __init__(self) -> None:
         self.engine = AudarTTSEngine()
@@ -90,8 +89,9 @@ class AudarTTSProvider(BaseTTSProvider):
         speed: float = 1.0,
         progress_cb: Optional[Callable[[int, int], None]] = None,
     ) -> Optional[Tuple[bytes, int]]:
-        """Synthesize text by batching into sentences with Arabic surrounding for English."""
-        if not gen_text or not gen_text.strip():
+        """Synthesize text directly without sentence batching."""
+        text = (gen_text or "").strip()
+        if not text:
             return None
 
         # Reset any past interrupt flag
@@ -101,49 +101,27 @@ class AudarTTSProvider(BaseTTSProvider):
         if not self.is_available():
             self.ensure_loaded()
 
-        # Split input into sentences / batches with English protection
-        batches = split_into_batches(gen_text)
-        if not batches:
-            return None
-
-        total_batches = len(batches)
-        logger.info("[AudarTTSProvider] Synthesizing %d batches for text length %d", total_batches, len(gen_text))
-
-        wave_chunks: list[np.ndarray] = []
-        # 60ms natural pause between sentences @ 24kHz
-        silence_samples = int(0.06 * OUT_SR)
-        silence = np.zeros(silence_samples, dtype=np.float32)
+        logger.info("[AudarTTSProvider] Synthesizing text (length: %d chars)", len(text))
 
         try:
             with self._lock:
-                for idx, batch_text in enumerate(batches):
-                    if self.engine._stop_event.is_set():
-                        logger.info("[AudarTTSProvider] Synthesis aborted immediately on user stop request")
-                        return None
-                    logger.debug("[AudarTTSProvider] Batch %d/%d: %s", idx + 1, total_batches, batch_text)
+                if self.engine._stop_event.is_set():
+                    logger.info("[AudarTTSProvider] Synthesis aborted immediately on user stop request")
+                    return None
+
+                audio_data = self.engine.synthesize_batch(text)
+                if audio_data is None or len(audio_data) == 0:
+                    logger.warning("[AudarTTSProvider] Synthesis produced no audio")
+                    return None
+
+                if progress_cb:
                     try:
-                        audio_chunk = self.engine.synthesize_batch(batch_text)
-                        if audio_chunk is not None and len(audio_chunk) > 0:
-                            if wave_chunks:
-                                wave_chunks.append(silence)
-                            wave_chunks.append(audio_chunk)
-                    except Exception as e:
-                        logger.exception("[AudarTTSProvider] Failed synthesizing batch %d: %s", idx + 1, e)
+                        progress_cb(1, 1)
+                    except Exception:
+                        logger.debug("Failed to invoke progress_cb", exc_info=True)
 
-                    # Report progress
-                    if progress_cb:
-                        try:
-                            progress_cb(idx + 1, total_batches)
-                        except Exception:
-                            logger.debug("Failed to invoke progress_cb", exc_info=True)
-
-            if not wave_chunks:
-                logger.warning("[AudarTTSProvider] All batches failed to produce audio")
-                return None
-
-            combined_audio = np.concatenate(wave_chunks)
-            wav_bytes = numpy_to_wav_bytes(combined_audio, OUT_SR)
-            return wav_bytes, OUT_SR
+                wav_bytes = numpy_to_wav_bytes(audio_data, OUT_SR)
+                return wav_bytes, OUT_SR
 
         except Exception as e:
             logger.exception("[AudarTTSProvider] Synthesis failed: %s", e)

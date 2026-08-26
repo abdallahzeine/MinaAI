@@ -47,9 +47,11 @@ lerna-debug.log*
 
 # ── Build / Generated assets (TTS samples) ────────────────────────
 Backend/assets/generated*.wav
+Backend/assets/*.pdf
 frontend/public/generated*.wav
 generated_*.wav
-frontend/public/generated_*.wav
+test_output*.wav
+*.wav
 
 # ── Env & secrets ─────────────────────────────────────────────────
 .env
